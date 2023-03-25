@@ -1,0 +1,2 @@
+alias sync_from='rsync -avzhP --exclude={'dataset','wandb','.git'}'
+alias sync_to='rsync -avzhP --exclude={'dataset','wandb','weights'}'
