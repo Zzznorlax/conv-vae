@@ -32,15 +32,15 @@ def train_vae(opt: Settings):
         transforms.ColorJitter(brightness=opt.AUG_COLOR_JITTER, contrast=opt.AUG_COLOR_JITTER, saturation=opt.AUG_COLOR_JITTER),
     ])  # type: ignore
 
-    train_dataset = DatasetBase(opt.DATASET_PATH, transform=aug_transforms, suffix=[opt.EXT], size=opt.DATASET_SIZE)
+    train_dataset = DatasetBase(opt.DATASET_PATH, transform=aug_transforms, suffix=[opt.EXT], size=opt.DATASET_SIZE, img_size=opt.IMG_SIZE)
     train_loader = DataLoader(train_dataset, batch_size=opt.BATCH_SIZE, shuffle=True)
 
     val_transforms = None
 
-    val_dataset = DatasetBase(opt.VALIDATION_DATASET_PATH, transform=val_transforms, suffix=[opt.EXT], size=opt.DATASET_SIZE)
+    val_dataset = DatasetBase(opt.VALIDATION_DATASET_PATH, transform=val_transforms, suffix=[opt.EXT], size=opt.DATASET_SIZE, img_size=opt.IMG_SIZE)
     val_loader = DataLoader(val_dataset, batch_size=opt.BATCH_SIZE, shuffle=False)
 
-    model = ConvVAE(in_ch=1, input_size=28, latent_dim=opt.LATENT_SIZE, d_size=opt.D_SIZE)
+    model = ConvVAE(in_ch=1, input_size=opt.IMG_SIZE, latent_dim=opt.LATENT_SIZE, d_size=opt.D_SIZE)
 
     optimizer = Adam(model.parameters(), lr=opt.LR)
 
