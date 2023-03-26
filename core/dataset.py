@@ -55,13 +55,9 @@ def dataset_statistic(dataset: Dataset):
     mean = 0.
     std = 0.
     size = 0
-    for images, _ in loader:
-
-        print(images.size())
+    for images in loader:
         batch_samples = images.size(0)  # batch size (the last batch can have smaller size!)
         images = images.view(batch_samples, images.size(1), -1)
-
-        # print(torch.max(images), torch.min(images))
 
         mean += images.mean(2).sum(0)
         std += images.std(2).sum(0)

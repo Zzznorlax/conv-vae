@@ -8,10 +8,16 @@ from torchvision import transforms
 
 from core.config import Settings, get_settings
 from core.model import ConvVAE
-from core.dataset import DatasetBase
+from core.dataset import DatasetBase, dataset_statistic
 from core.metric import elbo_loss
 from core.utils.model import get_latest_ckpt
 from core.utils.log import get_logger
+
+
+TRAINING_MEAN = (0.1347)
+TRAINING_STD = (0.2973)
+VAL_MEAN = (0.1365)
+VAL_STD = (0.2996)
 
 
 def train_vae(opt: Settings):
@@ -29,17 +35,19 @@ def train_vae(opt: Settings):
     train_dataset = DatasetBase(opt.DATASET_PATH, transform=aug_transforms, suffix=[opt.EXT], size=opt.DATASET_SIZE)
     train_loader = DataLoader(train_dataset, batch_size=opt.BATCH_SIZE, shuffle=True)
 
-    val_dataset = DatasetBase(opt.VALIDATION_DATASET_PATH, transform=None, suffix=[opt.EXT], size=opt.DATASET_SIZE)
+    val_transforms = None
+
+    val_dataset = DatasetBase(opt.VALIDATION_DATASET_PATH, transform=val_transforms, suffix=[opt.EXT], size=opt.DATASET_SIZE)
     val_loader = DataLoader(val_dataset, batch_size=opt.BATCH_SIZE, shuffle=False)
 
-    model = ConvVAE(in_ch=3, input_size=28, latent_dim=opt.LATENT_SIZE, d_size=opt.D_SIZE)
+    model = ConvVAE(in_ch=1, input_size=28, latent_dim=opt.LATENT_SIZE, d_size=opt.D_SIZE)
 
     optimizer = Adam(model.parameters(), lr=opt.LR)
 
     # custom loss function
     def _loss_func(x, y, mu, logvar):
 
-        return elbo_loss(x, y, mu, logvar)
+        return elbo_loss(x, y, mu, logvar, kld_weight=opt.KLD_WEIGHT)
 
     # loads state from previous checkpoint
     if opt.RESUME:
@@ -67,14 +75,14 @@ def train_vae(opt: Settings):
 
             img = img.to(device)
 
-            x, mu, logvar = model(img)
+            recon_img, mu, logvar = model(img)
 
-            loss = _loss_func(img, x, mu, logvar)
+            loss = _loss_func(recon_img, img, mu, logvar)
 
             loss.backward()
             optimizer.step()
 
-            logger.info("epoch ({}/{}), batch {}, Training Loss: {}".format(epoch + 1, opt.EPOCHS, batch_idx + 1, loss))
+            logger.info("epoch ({}/{}), batch {}, Training Loss: {}".format(epoch + 1, opt.EPOCHS, batch_idx + 1, loss.item()))
 
             if (batch_idx + 1) % opt.LOG_INTERVAL == 0:
 
@@ -84,11 +92,11 @@ def train_vae(opt: Settings):
 
                         val_img = val_img.to(device)
 
-                        val_x, val_mu, val_logvar = model(val_img)
+                        val_recon_img, val_mu, val_logvar = model(val_img)
 
-                        val_loss = _loss_func(val_img, val_x, val_mu, val_logvar)
+                        val_loss = _loss_func(val_recon_img, val_img, val_mu, val_logvar)
 
-                        logger.info("epoch ({}/{}), batch {}, Validation Loss: {}".format(epoch + 1, opt.EPOCHS, val_batch_idx + 1, val_loss))
+                        logger.info("epoch ({}/{}), batch {}, Validation Loss: {}".format(epoch + 1, opt.EPOCHS, val_batch_idx + 1, val_loss.item()))
 
                         wandb.log({
                             "val_loss": val_loss,
@@ -119,6 +127,15 @@ def train_vae(opt: Settings):
     logger.info("Training finished")
 
 
+def dataset_stats(opt: Settings):
+
+    train_dataset = DatasetBase(opt.DATASET_PATH, transform=None, suffix=[opt.EXT], size=opt.DATASET_SIZE)
+    val_dataset = DatasetBase(opt.VALIDATION_DATASET_PATH, transform=None, suffix=[opt.EXT], size=opt.DATASET_SIZE)
+
+    print("train", dataset_statistic(train_dataset))
+    print("val", dataset_statistic(val_dataset))
+
+
 if __name__ == '__main__':
 
     seed = 777
@@ -130,3 +147,5 @@ if __name__ == '__main__':
     wandb.init(project=opt.PROJECT_NAME, name=opt.CKPT_LABEL, config=dict(opt), mode=opt.WANDB_MODE)
 
     train_vae(opt)
+
+    # dataset_stats(opt)

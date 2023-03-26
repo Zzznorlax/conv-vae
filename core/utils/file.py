@@ -30,7 +30,7 @@ def get_files(folder_path, ext: List[str] = []):
     files = []
 
     for _ext in ext:
-        files += glob.glob(join(folder_path, f"*{_ext}"))
+        files += glob.glob(join(folder_path, "**", f"*{_ext}"), recursive=True)
 
     return files
 
