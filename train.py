@@ -9,7 +9,7 @@ from torchvision import transforms
 from core.config import Settings, get_settings
 from core.model import ConvVAE
 from core.dataset import DatasetBase, dataset_statistic
-from core.metric import elbo_loss
+from core.metric import elbo_loss, kl_divergence
 from core.utils.model import get_latest_ckpt
 from core.utils.log import get_logger
 
@@ -68,6 +68,7 @@ def train_vae(opt: Settings):
     cur_itrs = 0
     cum_batch = 0
     train_total_loss = 0
+    train_total_kld = 0
     for epoch in range(opt.EPOCHS):
 
         for batch_idx, img in enumerate(train_loader):
@@ -81,6 +82,7 @@ def train_vae(opt: Settings):
 
             loss = _loss_func(recon_img, img, mu, logvar)
             train_total_loss += loss.item()
+            train_total_kld += kl_divergence(mu, logvar).item()
 
             loss.backward()
             optimizer.step()
@@ -90,6 +92,7 @@ def train_vae(opt: Settings):
             if (batch_idx + 1) % opt.LOG_INTERVAL == 0:
 
                 val_total_loss = 0
+                val_total_kld = 0
                 model.eval()
                 with torch.no_grad():
                     for val_batch_idx, val_img in enumerate(val_loader):
@@ -100,17 +103,25 @@ def train_vae(opt: Settings):
 
                         val_loss = _loss_func(val_recon_img, val_img, val_mu, val_logvar)
                         val_total_loss += val_loss.item()
+                        val_total_kld += kl_divergence(val_mu, val_logvar).item()
+
+                val_avg_kld = val_total_kld / (opt.LOG_INTERVAL * opt.BATCH_SIZE)
+                train_avg_kld = train_total_kld / (cum_batch * opt.BATCH_SIZE)
 
                 val_avg_loss = val_total_loss / (opt.LOG_INTERVAL * opt.BATCH_SIZE)
                 train_avg_loss = train_total_loss / (cum_batch * opt.BATCH_SIZE)
+
                 logger.info("epoch ({}/{}), iteration {}, Validation Loss: {}".format(epoch + 1, opt.EPOCHS, cur_itrs + 1, val_avg_loss))
                 logger.info("epoch ({}/{}), iteration {}, Training Loss: {}".format(epoch + 1, opt.EPOCHS, cur_itrs + 1, train_avg_loss))
 
                 wandb.log({
+                    "val_kld": val_avg_kld,
                     "val_loss": val_avg_loss,
+                    "train_kld": train_avg_kld,
                     "train_loss": train_avg_loss,
                 })
                 train_total_loss = 0
+                train_total_kld = 0
                 cum_batch = 0
 
             if (batch_idx + 1) % opt.CKPT_INTERVAL == 0:
