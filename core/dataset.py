@@ -1,6 +1,7 @@
 import torch
 import cv2
 import os
+import random
 from torch.utils.data import DataLoader, Dataset
 from typing import List, Optional
 from torchvision import transforms
@@ -21,6 +22,7 @@ class DatasetBase(Dataset):
         self.input_dir = dir
 
         self.path_list = file_utils.get_files(self.input_dir, ext=suffix)[:size]
+        random.shuffle(self.path_list)
 
         self.aug_transforms = transform
 

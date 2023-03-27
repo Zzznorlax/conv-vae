@@ -2,6 +2,7 @@ import os
 import random
 import torch
 import wandb
+import numpy as np
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision import transforms
@@ -12,12 +13,6 @@ from core.dataset import DatasetBase, dataset_statistic
 from core.metric import elbo_loss, kl_divergence
 from core.utils.model import get_latest_ckpt
 from core.utils.log import get_logger
-
-
-TRAINING_MEAN = (0.1347)
-TRAINING_STD = (0.2973)
-VAL_MEAN = (0.1365)
-VAL_STD = (0.2996)
 
 
 def train_vae(opt: Settings):
@@ -90,6 +85,7 @@ def train_vae(opt: Settings):
 
             # logger.info("epoch ({}/{}), batch {}, Training Loss: {}".format(epoch + 1, opt.EPOCHS, batch_idx + 1, loss.item()))
 
+            # performs validation and logs to wandb
             if (batch_idx + 1) % opt.LOG_INTERVAL == 0:
 
                 val_cum_batch = 0
@@ -129,6 +125,7 @@ def train_vae(opt: Settings):
                 train_total_kld = 0
                 cum_batch = 0
 
+            # saves checkpoint
             if (batch_idx + 1) % opt.CKPT_INTERVAL == 0:
 
                 ckpt_types = ["latest"]
@@ -150,6 +147,44 @@ def train_vae(opt: Settings):
 
             cum_batch += 1
             cur_itrs += img.shape[0]
+
+        # generates samples and logs image to wandb
+        sample_loader = DataLoader(val_dataset, batch_size=opt.SAMPLE_GRID_SIZE**2)
+
+        samples = None
+        input_imgs = None
+        for _, img in enumerate(sample_loader):
+
+            img = img.to(opt.DEVICE)
+            recon_imgs, _, _ = model(img)
+            samples = recon_imgs.cpu().detach().numpy()
+            input_imgs = img.cpu().detach().numpy()
+
+            break
+
+        if samples is not None:
+            # Rescale pixel values from [0, 1] to [0, 255]
+            samples = (samples * 255).astype(np.uint8)
+
+            # Reshape samples to a 10 by 10 grid of images
+            samples = samples.reshape(opt.SAMPLE_GRID_SIZE, opt.SAMPLE_GRID_SIZE, opt.IMG_SIZE, opt.IMG_SIZE)
+            samples = np.transpose(samples, (0, 2, 1, 3))
+            samples = samples.reshape(opt.SAMPLE_GRID_SIZE * opt.IMG_SIZE, opt.SAMPLE_GRID_SIZE * opt.IMG_SIZE)
+
+        if input_imgs is not None:
+            # Rescale pixel values from [0, 1] to [0, 255]
+            input_imgs = (input_imgs * 255).astype(np.uint8)
+
+            # Reshape input images to a 10 by 10 grid of images
+            input_imgs = input_imgs.reshape(opt.SAMPLE_GRID_SIZE, opt.SAMPLE_GRID_SIZE, opt.IMG_SIZE, opt.IMG_SIZE)
+            input_imgs = np.transpose(input_imgs, (0, 2, 1, 3))
+            input_imgs = input_imgs.reshape(opt.SAMPLE_GRID_SIZE * opt.IMG_SIZE, opt.SAMPLE_GRID_SIZE * opt.IMG_SIZE)
+
+        wandb.log({
+            "epoch": epoch + 1,
+            "samples": wandb.Image(samples, caption="Samples"),
+            "inputs": wandb.Image(input_imgs, caption="Inputs"),
+        })
 
     logger.info("Training finished")
 

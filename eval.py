@@ -36,24 +36,29 @@ def eval_vae(opt: Settings, grid_size: int = 10):
 
     val_transforms = None
 
-    val_dataset = DatasetBase(opt.VALIDATION_DATASET_PATH, transform=val_transforms, suffix=[opt.EXT], size=grid_size**2, img_size=opt.IMG_SIZE)
-    val_loader = DataLoader(val_dataset, batch_size=grid_size**2, shuffle=False)
+    val_dataset = DatasetBase(opt.VALIDATION_DATASET_PATH, transform=val_transforms, suffix=[opt.EXT], img_size=opt.IMG_SIZE)
+    val_loader = DataLoader(val_dataset, batch_size=grid_size**2, shuffle=True)
 
     model = ConvVAE(in_ch=1, input_size=opt.IMG_SIZE, latent_dim=opt.LATENT_SIZE, d_size=opt.D_SIZE)
 
     # loads state from previous checkpoint
     ckpt = get_latest_ckpt(opt.CKPT_DIR)
     if ckpt:
-        state_dict = torch.load(ckpt)
+        state_dict = torch.load(ckpt, map_location=torch.device('cpu'))
         model.load_state_dict(state_dict['model_state'])
 
     model.eval()
 
     samples = None
+
     for _, img in enumerate(val_loader):
 
         img = img.to(opt.DEVICE)
-        samples = model(img).cpu().numpy()
+        recon_imgs, _, _ = model(img)
+        samples = recon_imgs.detach().numpy()
+        # samples = img.detach().numpy()
+
+        break
 
     if samples is not None:
         # Rescale pixel values from [0, 1] to [0, 255]

@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     # Metric Params
     KLD_WEIGHT: float = 1
 
+    # Sample related
+    SAMPLE_GRID_SIZE: int = 10
+
     # Project related
     PROJECT_NAME: str
 
