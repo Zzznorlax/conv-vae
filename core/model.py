@@ -68,6 +68,8 @@ class ConvVAE(nn.Module):
         self.encoder = Encoder(in_ch, d_size, latent_dim, input_size)
         self.decoder = Decoder(latent_dim, d_size)
 
+        self.latent_dim = latent_dim
+
     def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor):
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)

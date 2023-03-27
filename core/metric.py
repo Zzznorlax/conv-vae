@@ -11,7 +11,7 @@ def elbo_loss(recon_x: torch.Tensor, x: torch.Tensor, mu: torch.Tensor, logvar: 
 
     kld_loss = kl_divergence(mu, logvar)
 
-    recon_loss = F.binary_cross_entropy(recon_x, x, reduction='sum')
+    recon_loss = F.binary_cross_entropy(recon_x, x, reduction='mean')
 
     elbo = recon_loss + kld_loss * kld_weight
     return elbo

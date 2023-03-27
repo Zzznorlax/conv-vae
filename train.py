@@ -58,6 +58,7 @@ def train_vae(opt: Settings):
             cur_itrs = state_dict['cur_itrs']
             best_loss = state_dict['best_loss']
             optimizer.load_state_dict(state_dict['optimizer_state'])
+            logger.info("resumed from {}, iteration {}, best loss: {}".format(state_dict, cur_itrs + 1, best_loss))
 
     device = opt.DEVICE
     model.to(device)
@@ -91,11 +92,12 @@ def train_vae(opt: Settings):
 
             if (batch_idx + 1) % opt.LOG_INTERVAL == 0:
 
+                val_cum_batch = 0
                 val_total_loss = 0
                 val_total_kld = 0
                 model.eval()
                 with torch.no_grad():
-                    for val_batch_idx, val_img in enumerate(val_loader):
+                    for _, val_img in enumerate(val_loader):
 
                         val_img = val_img.to(device)
 
@@ -105,11 +107,13 @@ def train_vae(opt: Settings):
                         val_total_loss += val_loss.item()
                         val_total_kld += kl_divergence(val_mu, val_logvar).item()
 
-                val_avg_kld = val_total_kld / (opt.LOG_INTERVAL * opt.BATCH_SIZE)
-                train_avg_kld = train_total_kld / (cum_batch * opt.BATCH_SIZE)
+                        val_cum_batch += 1
 
-                val_avg_loss = val_total_loss / (opt.LOG_INTERVAL * opt.BATCH_SIZE)
-                train_avg_loss = train_total_loss / (cum_batch * opt.BATCH_SIZE)
+                val_avg_kld = val_total_kld / val_cum_batch
+                train_avg_kld = train_total_kld / cum_batch
+
+                val_avg_loss = val_total_loss / val_cum_batch
+                train_avg_loss = train_total_loss / cum_batch
 
                 logger.info("epoch ({}/{}), iteration {}, Validation Loss: {}".format(epoch + 1, opt.EPOCHS, cur_itrs + 1, val_avg_loss))
                 logger.info("epoch ({}/{}), iteration {}, Training Loss: {}".format(epoch + 1, opt.EPOCHS, cur_itrs + 1, train_avg_loss))
@@ -119,6 +123,7 @@ def train_vae(opt: Settings):
                     "val_loss": val_avg_loss,
                     "train_kld": train_avg_kld,
                     "train_loss": train_avg_loss,
+                    "iteration": cur_itrs + 1,
                 })
                 train_total_loss = 0
                 train_total_kld = 0
@@ -144,7 +149,7 @@ def train_vae(opt: Settings):
                     wandb.save(ckpt_path)
 
             cum_batch += 1
-            cur_itrs += opt.BATCH_SIZE
+            cur_itrs += img.shape[0]
 
     logger.info("Training finished")
 
