@@ -51,6 +51,9 @@ class Settings(BaseSettings):
 
     # Sample related
     SAMPLE_GRID_SIZE: int = 10
+    SAMPLE_LATENT_NUM: int = 1000
+
+    SAMPLE_EPS_IMG_NUM: int = 1
 
     # Project related
     PROJECT_NAME: str

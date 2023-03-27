@@ -2,10 +2,13 @@ import os
 import random
 import torch
 import wandb
+import math
 import numpy as np
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision import transforms
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
 
 from core.config import Settings, get_settings
 from core.model import ConvVAE
@@ -67,7 +70,7 @@ def train_vae(opt: Settings):
     train_total_kld = 0
     for epoch in range(opt.EPOCHS):
 
-        for batch_idx, img in enumerate(train_loader):
+        for batch_idx, (img, label) in enumerate(train_loader):
 
             model.train()
             optimizer.zero_grad()
@@ -84,46 +87,6 @@ def train_vae(opt: Settings):
             optimizer.step()
 
             # logger.info("epoch ({}/{}), batch {}, Training Loss: {}".format(epoch + 1, opt.EPOCHS, batch_idx + 1, loss.item()))
-
-            # performs validation and logs to wandb
-            if (batch_idx + 1) % opt.LOG_INTERVAL == 0:
-
-                val_cum_batch = 0
-                val_total_loss = 0
-                val_total_kld = 0
-                model.eval()
-                with torch.no_grad():
-                    for _, val_img in enumerate(val_loader):
-
-                        val_img = val_img.to(device)
-
-                        val_recon_img, val_mu, val_logvar = model(val_img)
-
-                        val_loss = _loss_func(val_recon_img, val_img, val_mu, val_logvar)
-                        val_total_loss += val_loss.item()
-                        val_total_kld += kl_divergence(val_mu, val_logvar).item()
-
-                        val_cum_batch += 1
-
-                val_avg_kld = val_total_kld / val_cum_batch
-                train_avg_kld = train_total_kld / cum_batch
-
-                val_avg_loss = val_total_loss / val_cum_batch
-                train_avg_loss = train_total_loss / cum_batch
-
-                logger.info("epoch ({}/{}), iteration {}, Validation Loss: {}".format(epoch + 1, opt.EPOCHS, cur_itrs + 1, val_avg_loss))
-                logger.info("epoch ({}/{}), iteration {}, Training Loss: {}".format(epoch + 1, opt.EPOCHS, cur_itrs + 1, train_avg_loss))
-
-                wandb.log({
-                    "val_kld": val_avg_kld,
-                    "val_loss": val_avg_loss,
-                    "train_kld": train_avg_kld,
-                    "train_loss": train_avg_loss,
-                    "iteration": cur_itrs + 1,
-                })
-                train_total_loss = 0
-                train_total_kld = 0
-                cum_batch = 0
 
             # saves checkpoint
             if (batch_idx + 1) % opt.CKPT_INTERVAL == 0:
@@ -148,42 +111,156 @@ def train_vae(opt: Settings):
             cum_batch += 1
             cur_itrs += img.shape[0]
 
+            # performs validation and logs to wandb
+            if (batch_idx + 1) % opt.LOG_INTERVAL == 0:
+
+                val_cum_batch = 0
+                val_total_loss = 0
+                val_total_kld = 0
+                model.eval()
+                with torch.no_grad():
+                    for _, (val_img, _) in enumerate(val_loader):
+
+                        val_img = val_img.to(device)
+
+                        val_recon_img, val_mu, val_logvar = model(val_img)
+
+                        val_loss = _loss_func(val_recon_img, val_img, val_mu, val_logvar)
+                        val_total_loss += val_loss.item()
+                        val_total_kld += kl_divergence(val_mu, val_logvar).item()
+
+                        val_cum_batch += 1
+
+                val_avg_kld = val_total_kld / val_cum_batch
+                train_avg_kld = train_total_kld / cum_batch
+
+                val_avg_loss = val_total_loss / val_cum_batch
+                train_avg_loss = train_total_loss / cum_batch
+
+                logger.info("epoch ({}/{}), iteration {}, Validation Loss: {}".format(epoch + 1, opt.EPOCHS, cur_itrs, val_avg_loss))
+                logger.info("epoch ({}/{}), iteration {}, Training Loss: {}".format(epoch + 1, opt.EPOCHS, cur_itrs, train_avg_loss))
+
+                wandb.log({
+                    "val_kld": val_avg_kld,
+                    "val_loss": val_avg_loss,
+                    "train_kld": train_avg_kld,
+                    "train_loss": train_avg_loss,
+                    "iteration": cur_itrs,
+                })
+                train_total_loss = 0
+                train_total_kld = 0
+                cum_batch = 0
+
         # generates samples and logs image to wandb
         sample_loader = DataLoader(val_dataset, batch_size=opt.SAMPLE_GRID_SIZE**2)
 
         samples = None
         input_imgs = None
-        for _, img in enumerate(sample_loader):
+        with torch.no_grad():
 
-            img = img.to(opt.DEVICE)
-            recon_imgs, _, _ = model(img)
-            samples = recon_imgs.cpu().detach().numpy()
-            input_imgs = img.cpu().detach().numpy()
+            model.eval()
 
-            break
+            for _, (img, _) in enumerate(sample_loader):
 
-        if samples is not None:
-            # Rescale pixel values from [0, 1] to [0, 255]
-            samples = (samples * 255).astype(np.uint8)
+                img = img.to(opt.DEVICE)
+                recon_imgs, _, _ = model(img)
+                samples = recon_imgs.cpu().detach().numpy()
+                input_imgs = img.cpu().detach().numpy()
 
-            # Reshape samples to a 10 by 10 grid of images
-            samples = samples.reshape(opt.SAMPLE_GRID_SIZE, opt.SAMPLE_GRID_SIZE, opt.IMG_SIZE, opt.IMG_SIZE)
-            samples = np.transpose(samples, (0, 2, 1, 3))
-            samples = samples.reshape(opt.SAMPLE_GRID_SIZE * opt.IMG_SIZE, opt.SAMPLE_GRID_SIZE * opt.IMG_SIZE)
+                break
 
-        if input_imgs is not None:
-            # Rescale pixel values from [0, 1] to [0, 255]
-            input_imgs = (input_imgs * 255).astype(np.uint8)
+            if samples is not None:
+                # Rescale pixel values from [0, 1] to [0, 255]
+                samples = (samples * 255).astype(np.uint8)
 
-            # Reshape input images to a 10 by 10 grid of images
-            input_imgs = input_imgs.reshape(opt.SAMPLE_GRID_SIZE, opt.SAMPLE_GRID_SIZE, opt.IMG_SIZE, opt.IMG_SIZE)
-            input_imgs = np.transpose(input_imgs, (0, 2, 1, 3))
-            input_imgs = input_imgs.reshape(opt.SAMPLE_GRID_SIZE * opt.IMG_SIZE, opt.SAMPLE_GRID_SIZE * opt.IMG_SIZE)
+                # Reshape samples to a grid of images
+                samples = samples.reshape(opt.SAMPLE_GRID_SIZE, opt.SAMPLE_GRID_SIZE, opt.IMG_SIZE, opt.IMG_SIZE)
+                samples = np.transpose(samples, (0, 2, 1, 3))
+                samples = samples.reshape(opt.SAMPLE_GRID_SIZE * opt.IMG_SIZE, opt.SAMPLE_GRID_SIZE * opt.IMG_SIZE)
+
+            if input_imgs is not None:
+                # Rescale pixel values from [0, 1] to [0, 255]
+                input_imgs = (input_imgs * 255).astype(np.uint8)
+
+                # Reshape input images to a grid of images
+                input_imgs = input_imgs.reshape(opt.SAMPLE_GRID_SIZE, opt.SAMPLE_GRID_SIZE, opt.IMG_SIZE, opt.IMG_SIZE)
+                input_imgs = np.transpose(input_imgs, (0, 2, 1, 3))
+                input_imgs = input_imgs.reshape(opt.SAMPLE_GRID_SIZE * opt.IMG_SIZE, opt.SAMPLE_GRID_SIZE * opt.IMG_SIZE)
+
+        # plots latent space
+        latent_space_sample_loader = DataLoader(val_dataset, batch_size=opt.SAMPLE_LATENT_NUM)
+
+        z = None
+        labels = None
+        fig = None
+        with torch.no_grad():
+
+            model.eval()
+
+            for _, (img, label) in enumerate(latent_space_sample_loader):
+
+                img = img.to(opt.DEVICE)
+
+                sample_mu, sample_logvar = model.encoder(img)
+                z = model.reparameterize(sample_mu, sample_logvar).cpu().numpy()
+
+                labels = np.array(label).astype(int)
+
+                break
+
+            if z is not None and labels is not None:
+                # Use sklearn.manifold.TSNE to reduce the dimensionality of the latent vectors to 2D
+                tsne = TSNE(n_components=2, perplexity=30, n_iter=300)
+                z_tsne = tsne.fit_transform(z)
+
+                # Plot the 2D latent vectors using a scatter plot
+                fig, ax = plt.subplots()
+                scatter = ax.scatter(z_tsne[:, 0], z_tsne[:, 1], c=labels, cmap='tab10')
+                legend = ax.legend(*scatter.legend_elements(), loc="lower left", title="Classes")
+                ax.add_artist(legend)
+                plt.colorbar(scatter)
+
+        # plots latent distribution
+        eps_sample_loader = DataLoader(val_dataset, batch_size=opt.SAMPLE_EPS_IMG_NUM)
+
+        recon_list = []
+        recon_imgs = None
+        with torch.no_grad():
+
+            model.eval()
+
+            for _, (imgs, _) in enumerate(eps_sample_loader):
+
+                imgs = imgs.to(opt.DEVICE)
+
+                for img in imgs:
+                    sample_mu, sample_logvar = model.encoder(img.unsqueeze(0))
+
+                    # repeats the mean and logvar to create a one-hot encoding matrix of size (latent_size, latent_size)
+                    sample_mu, sample_logvar = sample_mu.repeat(opt.LATENT_SIZE, 1), sample_logvar.repeat(opt.LATENT_SIZE, 1)
+
+                    # Fill the diagonal elements with ones to create a one-hot encoding
+                    eps = torch.eye(opt.LATENT_SIZE).unsqueeze(0).to(opt.DEVICE)
+
+                    z = model.sample_z(sample_mu, sample_logvar, eps)
+
+                    output_img_grid = model.decoder(z).cpu().detach().numpy()  # shape: (latent_size, 1, img_size, img_size)
+
+                    num_rc = int(np.sqrt(opt.LATENT_SIZE))
+                    output_img_grid = output_img_grid.reshape(num_rc, num_rc, 1, opt.IMG_SIZE, opt.IMG_SIZE)
+                    output_img_grid = output_img_grid.transpose(0, 3, 1, 4, 2)
+                    output_img_grid = output_img_grid.reshape(1, num_rc * opt.IMG_SIZE, num_rc * opt.IMG_SIZE)
+
+                    recon_list.append(output_img_grid)
+
+                break
 
         wandb.log({
             "epoch": epoch + 1,
             "samples": wandb.Image(samples, caption="Samples"),
             "inputs": wandb.Image(input_imgs, caption="Inputs"),
+            "tsne_plot": wandb.Image(fig),
+            "z_samples": wandb.Image(np.array(recon_list), caption="Z Samples"),
         })
 
     logger.info("Training finished")

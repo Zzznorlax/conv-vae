@@ -38,6 +38,8 @@ class DatasetBase(Dataset):
     def __getitem__(self, idx: int):
         file_path = self.path_list[idx]
 
+        label = file_path.split(os.sep)[-2]
+
         np_img = cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
 
         img = self.to_tensor(np_img)
@@ -47,7 +49,7 @@ class DatasetBase(Dataset):
 
         img: torch.Tensor = self.sample_transform(img)
 
-        return img
+        return img, label
 
 
 def dataset_statistic(dataset: Dataset):

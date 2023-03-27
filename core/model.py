@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from typing import Optional
+
 
 class Encoder(nn.Module):
     def __init__(self, in_ch: int = 3, d_size: int = 32, latent_dim: int = 256, input_size: int = 28):
@@ -81,3 +83,12 @@ class ConvVAE(nn.Module):
         z = self.reparameterize(mu, logvar)
         recon_x = self.decoder(z)
         return recon_x, mu, logvar
+
+    def sample_z(self, mu: torch.Tensor, logvar: torch.Tensor, eps: Optional[torch.Tensor] = None):
+        std = torch.exp(0.5 * logvar)
+
+        if eps is None:
+            eps = torch.randn_like(std)
+
+        z = mu + eps * std
+        return z
