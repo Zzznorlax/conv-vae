@@ -240,7 +240,8 @@ def train_vae(opt: Settings):
                     sample_mu, sample_logvar = sample_mu.repeat(opt.LATENT_SIZE, 1), sample_logvar.repeat(opt.LATENT_SIZE, 1)
 
                     # Fill the diagonal elements with ones to create a one-hot encoding
-                    eps = torch.eye(opt.LATENT_SIZE).unsqueeze(0).to(opt.DEVICE)
+                    # eps = torch.eye(opt.LATENT_SIZE).unsqueeze(0).to(opt.DEVICE)
+                    eps = torch.randn_like(sample_mu).to(opt.DEVICE)
 
                     z = model.sample_z(sample_mu, sample_logvar, eps)
 
@@ -255,12 +256,54 @@ def train_vae(opt: Settings):
 
                 break
 
+        # plots latent interpolation
+        eps_sample_loader = DataLoader(val_dataset, batch_size=2)
+
+        interp_imgs = []
+        with torch.no_grad():
+
+            model.eval()
+
+            for _, (imgs, _) in enumerate(eps_sample_loader):
+
+                imgs = imgs.to(opt.DEVICE)
+
+                sample_mu, sample_logvar = model.encoder(imgs)
+
+                eps = torch.randn_like(sample_mu).to(opt.DEVICE)
+
+                z = model.reparameterize(sample_mu, sample_logvar)
+
+                # Generate interpolation factors, including start and end factors
+                interpolation_factors = torch.linspace(0, 1, opt.LATENT_SIZE).to(opt.DEVICE)
+
+                # Interpolate between start and end tensors with fixed step
+                interp_zs = []
+                for factor in interpolation_factors:
+                    interp_z = torch.lerp(z[0], z[-1], factor)
+                    interp_zs.append(interp_z)
+
+                # Stack interpolated tensors into a single tensor with shape (latent_size, latent_size)
+                interp_zs = torch.stack(interp_zs)
+
+                output_img_grid = model.decoder(interp_zs).cpu().detach().numpy()  # shape: (latent_size, 1, img_size, img_size)
+
+                num_rc = int(np.sqrt(opt.LATENT_SIZE))
+                output_img_grid = output_img_grid.reshape(num_rc, num_rc, 1, opt.IMG_SIZE, opt.IMG_SIZE)
+                output_img_grid = output_img_grid.transpose(0, 3, 1, 4, 2)
+                output_img_grid = output_img_grid.reshape(1, num_rc * opt.IMG_SIZE, num_rc * opt.IMG_SIZE)
+
+                interp_imgs.append(output_img_grid)
+
+                break
+
         wandb.log({
             "epoch": epoch + 1,
             "samples": wandb.Image(samples, caption="Samples"),
             "inputs": wandb.Image(input_imgs, caption="Inputs"),
             "tsne_plot": wandb.Image(fig),
             "z_samples": wandb.Image(np.array(recon_list), caption="Z Samples"),
+            "z_interpolation": wandb.Image(np.array(interp_imgs), caption="Z Interpolation"),
         })
 
     logger.info("Training finished")
