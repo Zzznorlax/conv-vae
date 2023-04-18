@@ -1,11 +1,10 @@
-# ConvVAE MNIST Experimenta
+# ConvVAE MNIST Experiment
 
 Link: https://wandb.ai/zzznorlax/CONVVAE?workspace=user-zzznorlax
 
 ### Settings:
 
 ---
-
 - Use KLD Weight from 5e-1 ~ 5e-6
 - ConvVAE with 3 layers of conv2d
 
